@@ -8,7 +8,13 @@ import {
   useBatch,
 } from "../liveblocks.config";
 import { LiveList, LiveMap, LiveObject } from "@liveblocks/client";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   Color,
   Layer,
@@ -43,6 +49,33 @@ import ToolsBar from "./components/ToolsBar";
 
 const MAX_LAYERS = 100;
 
+function ClientSideSuspense(props: {
+  fallback: JSX.Element;
+  children: () => JSX.Element;
+}) {
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // We're on the server side, render the fallback
+  if (typeof window === "undefined" || !mounted) {
+    return props.fallback;
+  } else {
+    return <Suspense fallback={props.fallback}>{props.children()}</Suspense>;
+  }
+}
+
+function Loading() {
+  return (
+    <div className={styles.container}>
+      <div className={styles.loading}>
+        <img src="https://liveblocks.io/loading.svg" alt="Loading" />
+      </div>
+    </div>
+  );
+}
+
 export default function Room() {
   const roomId = useOverrideRoomId("nextjs-whiteboard-advanced");
 
@@ -61,38 +94,35 @@ export default function Room() {
       }}
     >
       <div className={styles.container}>
-        <WhiteboardTool />
+        {
+          //
+          // XXX Not sure what is the best way to make Suspense and SSR best
+          // friends. The new NextJS and React 18 might have a better way to
+          // offer this.
+          //
+          // This client-side-only Suspense trick works.
+          //
+          // Either way, it's important to realize that this is not related to
+          // Liveblocks at all. All Suspense-aware components have this issue.
+          //
+        }
+        <ClientSideSuspense fallback={<Loading />}>
+          {
+            /* This component tree will only run on the client, never during SSR */
+            () => <Canvas />
+          }
+        </ClientSideSuspense>
       </div>
     </RoomProvider>
   );
 }
 
-function WhiteboardTool() {
+function Canvas() {
   // layers is a LiveMap that contains all the shapes drawn on the canvas
-  const layers = useMap("layers");
+  const layers = useMap("layers", { suspense: true });
   // layerIds is LiveList of all the layer ids ordered by their z-index
-  const layerIds = useList("layerIds");
+  const layerIds = useList("layerIds", { suspense: true });
 
-  if (layerIds == null || layers == null) {
-    return (
-      <div className={styles.container}>
-        <div className={styles.loading}>
-          <img src="https://liveblocks.io/loading.svg" alt="Loading" />
-        </div>
-      </div>
-    );
-  }
-
-  return <Canvas layers={layers} layerIds={layerIds} />;
-}
-
-function Canvas({
-  layerIds,
-  layers,
-}: {
-  layerIds: LiveList<string>;
-  layers: LiveMap<string, LiveObject<Layer>>;
-}) {
   const [{ selection, pencilDraft }, setPresence] = useMyPresence();
   const [canvasState, setState] = useState<CanvasState>({
     mode: CanvasMode.None,
