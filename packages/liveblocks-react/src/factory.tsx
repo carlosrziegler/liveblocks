@@ -436,7 +436,7 @@ export function createRoomContext<
     return room.getSelf();
   }
 
-  function useStorage(): LiveObject<TStorage> | null {
+  function useStorage_classic(): LiveObject<TStorage> | null {
     const room = useRoom();
     const [root, setState] = React.useState<LiveObject<TStorage> | null>(null);
 
@@ -458,6 +458,10 @@ export function createRoomContext<
     }, [room]);
 
     return root;
+  }
+
+  function useStorage(): LiveObject<TStorage> | null {
+    return useStorage_classic();
   }
 
   function useHistory(): History {
