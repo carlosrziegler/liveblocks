@@ -123,7 +123,12 @@ type RoomContext<
    * const animals = useList("animals");  // e.g. [] or ["🦁", "🐍", "🦍"]
    */
   useList<TKey extends Extract<keyof TStorage, string>>(
-    key: TKey
+    key: TKey,
+    options: { suspense: true }
+  ): TStorage[TKey];
+  useList<TKey extends Extract<keyof TStorage, string>>(
+    key: TKey,
+    options?: { suspense: boolean }
   ): TStorage[TKey] | null;
 
   /**
@@ -137,7 +142,12 @@ type RoomContext<
    * const shapesById = useMap("shapes");
    */
   useMap<TKey extends Extract<keyof TStorage, string>>(
-    key: TKey
+    key: TKey,
+    options: { suspense: true }
+  ): TStorage[TKey];
+  useMap<TKey extends Extract<keyof TStorage, string>>(
+    key: TKey,
+    options?: { suspense: boolean }
   ): TStorage[TKey] | null;
 
   /**
@@ -151,7 +161,12 @@ type RoomContext<
    * const object = useObject("obj");
    */
   useObject<TKey extends Extract<keyof TStorage, string>>(
-    key: TKey
+    key: TKey,
+    options: { suspense: true }
+  ): TStorage[TKey];
+  useObject<TKey extends Extract<keyof TStorage, string>>(
+    key: TKey,
+    options?: { suspense: boolean }
   ): TStorage[TKey] | null;
 
   /**
@@ -210,7 +225,8 @@ type RoomContext<
    * @example
    * const root = useStorage();
    */
-  useStorage(): LiveObject<TStorage> | null;
+  useStorage(options: { suspense: true }): LiveObject<TStorage>;
+  useStorage(options?: { suspense: boolean }): LiveObject<TStorage> | null;
 
   /**
    * useUpdateMyPresence is similar to useMyPresence but it only returns the function to update the current user presence.
@@ -436,7 +452,53 @@ export function createRoomContext<
     return room.getSelf();
   }
 
-  function useStorage_classic(): LiveObject<TStorage> | null {
+  // NOTE: State/cache need to be kept outside of the hooks/components, because
+  // React will throw away the component state between Suspense renders.
+  const _storagePromisesInflight = new Map<string, Promise<void>>();
+  const _storageCache = new Map<string, LiveObject<TStorage>>();
+
+  //
+  // XXX This is not production-ready code
+  //
+  function useStorageWithSuspense(): LiveObject<TStorage> {
+    // XXX Is this on us to error about? This is a problem with using _any_
+    // Suspense API on the server, not just Liveblocks.
+    if (typeof window === "undefined") {
+      throw new Error(
+        "You should not invoke useStorage({ suspense: true }) server-side, only client-side."
+      );
+    }
+
+    const room = useRoom();
+
+    //
+    // XXX Restructure the code below to deal with _changing_ room IDs!
+    //
+    // XXX This will need a cleanup function to release loaded storage for
+    // a room when all components using that room get unmounted
+    //
+    // XXX Think about cancellation before the promise is resolved
+    //
+
+    const cached = _storageCache.get(room.id);
+    if (cached) {
+      return cached;
+    }
+
+    // Else, we'll need to fire off our fetch, and store it in our promise cache
+    let inflight = _storagePromisesInflight.get(room.id);
+    if (!inflight) {
+      // Fire off the fetch right now, and keep the promise in cache
+      inflight = room.getStorage().then((resp) => {
+        _storageCache.set(room.id, resp.root);
+      });
+      _storagePromisesInflight.set(room.id, inflight);
+    }
+
+    throw inflight;
+  }
+
+  function useStorageWithoutSuspense(): LiveObject<TStorage> | null {
     const room = useRoom();
     const [root, setState] = React.useState<LiveObject<TStorage> | null>(null);
 
@@ -460,8 +522,18 @@ export function createRoomContext<
     return root;
   }
 
-  function useStorage(): LiveObject<TStorage> | null {
-    return useStorage_classic();
+  function useStorage(options: { suspense: true }): LiveObject<TStorage>;
+  function useStorage(options?: {
+    suspense: boolean;
+  }): LiveObject<TStorage> | null;
+  function useStorage(options?: {
+    suspense: boolean;
+  }): LiveObject<TStorage> | null {
+    if (options?.suspense) {
+      return useStorageWithSuspense();
+    } else {
+      return useStorageWithoutSuspense();
+    }
   }
 
   function useHistory(): History {
@@ -480,9 +552,52 @@ export function createRoomContext<
     return useRoom().batch;
   }
 
-  function useStorageValue<TKey extends Extract<keyof TStorage, string>>(
-    key: TKey
-  ): TStorage[TKey] | null {
+  function useStorageValueWithSuspense<
+    TKey extends Extract<keyof TStorage, string>
+  >(key: TKey): TStorage[TKey] {
+    const room = useRoom();
+    const root = useStorage({ suspense: true });
+    const rerender = useRerender();
+
+    React.useEffect(() => {
+      let liveValue = root.get(key);
+
+      function onRootChange() {
+        const newCrdt = root!.get(key);
+        if (newCrdt !== liveValue) {
+          unsubscribeCrdt();
+          liveValue = newCrdt;
+          unsubscribeCrdt = room.subscribe(
+            liveValue as any /* AbstractCrdt */, // TODO: This is hiding a bug! If `liveValue` happens to be the string `"event"` this actually subscribes an event handler!
+            rerender
+          );
+          rerender();
+        }
+      }
+
+      let unsubscribeCrdt = room.subscribe(
+        liveValue as any /* AbstractCrdt */, // TODO: This is hiding a bug! If `liveValue` happens to be the string `"event"` this actually subscribes an event handler!
+        rerender
+      );
+      const unsubscribeRoot = room.subscribe(
+        root as any /* AbstractCrdt */, // TODO: This is hiding a bug! If `liveValue` happens to be the string `"event"` this actually subscribes an event handler!
+        onRootChange
+      );
+
+      rerender();
+
+      return () => {
+        unsubscribeRoot();
+        unsubscribeCrdt();
+      };
+    }, [root, room, key, rerender]);
+
+    return root.get(key);
+  }
+
+  function useStorageValueWithoutSuspense<
+    TKey extends Extract<keyof TStorage, string>
+  >(key: TKey): TStorage[TKey] | null {
     const room = useRoom();
     const root = useStorage();
     const rerender = useRerender();
@@ -528,6 +643,21 @@ export function createRoomContext<
       return null;
     } else {
       return root.get(key);
+    }
+  }
+
+  function useStorageValue<TKey extends Extract<keyof TStorage, string>>(
+    key: TKey,
+    options: { suspense: true }
+  ): TStorage[TKey];
+  function useStorageValue<TKey extends Extract<keyof TStorage, string>>(
+    key: TKey,
+    options?: { suspense: boolean }
+  ): TStorage[TKey] | null {
+    if (options?.suspense) {
+      return useStorageValueWithSuspense(key);
+    } else {
+      return useStorageValueWithoutSuspense(key);
     }
   }
 
