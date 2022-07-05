@@ -7,11 +7,7 @@ import WebSocket from "ws";
 
 import type { Room } from "../src";
 import { createClient } from "../src/client";
-import {
-  liveObjectToJson,
-  lsonToJson,
-  patchImmutableObject,
-} from "../src/immutable";
+import { patchImmutableObject } from "../src/immutable";
 import type { LiveObject } from "../src/LiveObject";
 import type {
   BaseUserMeta,
@@ -150,9 +146,9 @@ export function prepareTestsConflicts<
         jsonRoot2 = jsonRoot1;
       }
 
-      expect(lsonToJson(root1)).toEqual(jsonRoot1);
+      expect(root1.toJson()).toEqual(jsonRoot1);
       expect(immutableStorage1).toEqual(jsonRoot1);
-      expect(lsonToJson(root2)).toEqual(jsonRoot2);
+      expect(root2.toJson()).toEqual(jsonRoot2);
       expect(immutableStorage2).toEqual(jsonRoot2);
     }
 
@@ -178,8 +174,8 @@ export function prepareTestsConflicts<
     ws1.pauseSend();
     ws2.pauseSend();
 
-    let immutableStorage1 = liveObjectToJson(root1);
-    let immutableStorage2 = liveObjectToJson(root2);
+    let immutableStorage1 = root1.toJson();
+    let immutableStorage2 = root2.toJson();
 
     room1.subscribe(
       root1,
