@@ -27,6 +27,14 @@ function useInitial<T>(value: T): T {
   return React.useRef(value).current;
 }
 
+/**
+ * Freezes the first value passed-in. On subsequent renders, never changes its
+ * value.
+ */
+function useFreeze<T>(value: T): T {
+  return React.useRef(value).current;
+}
+
 export type RoomProviderProps<
   TPresence extends JsonObject,
   TStorage extends LsonObject
@@ -529,11 +537,11 @@ export function createRoomContext<
   function useStorage(options?: {
     suspense: boolean;
   }): LiveObject<TStorage> | null {
-    if (options?.suspense) {
-      return useStorageWithSuspense();
-    } else {
-      return useStorageWithoutSuspense();
-    }
+    return (
+      useFreeze(options?.suspense)
+        ? useStorageWithSuspense
+        : useStorageWithoutSuspense
+    )();
   }
 
   function useHistory(): History {
@@ -556,7 +564,7 @@ export function createRoomContext<
     TKey extends Extract<keyof TStorage, string>
   >(key: TKey): TStorage[TKey] {
     const room = useRoom();
-    const root = useStorage({ suspense: true });
+    const root = useStorageWithSuspense();
     const rerender = useRerender();
 
     React.useEffect(() => {
@@ -599,7 +607,7 @@ export function createRoomContext<
     TKey extends Extract<keyof TStorage, string>
   >(key: TKey): TStorage[TKey] | null {
     const room = useRoom();
-    const root = useStorage();
+    const root = useStorageWithoutSuspense();
     const rerender = useRerender();
 
     React.useEffect(() => {
@@ -654,11 +662,11 @@ export function createRoomContext<
     key: TKey,
     options?: { suspense: boolean }
   ): TStorage[TKey] | null {
-    if (options?.suspense) {
-      return useStorageValueWithSuspense(key);
-    } else {
-      return useStorageValueWithoutSuspense(key);
-    }
+    return (
+      useFreeze(options?.suspense)
+        ? useStorageValueWithSuspense
+        : useStorageValueWithoutSuspense
+    )(key);
   }
 
   return {
