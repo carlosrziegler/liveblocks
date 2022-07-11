@@ -1,13 +1,13 @@
 import { createRoomContext } from "@liveblocks/react";
 import randomNumber from "../../utils/randomNumber";
 import React, { useRef } from "react";
-import { LiveObject, LiveMap, LiveList, shallow } from "@liveblocks/client";
+import { LiveList, LiveMap, LiveObject, shallow } from "@liveblocks/client";
 import createLiveblocksClient from "../../utils/createClient";
 import { nanoid } from "nanoid";
 
 const client = createLiveblocksClient();
 
-const { RoomProvider, useBatch, useSelector, useObject } = createRoomContext<
+const { RoomProvider, useBatch, useSelector } = createRoomContext<
   never,
   {
     version: number;
@@ -86,14 +86,14 @@ export default function Home() {
 
 function Toolbar() {
   const renderCount = useRenderCount();
-  const mutableNestedOrNull = useObject("nest1")?.get("nest2") ?? null;
+  const mutableA = useMutable((root) => root.nest1.nest2.a);
+  const mutableB = useMutable((root) => root.nest1.nest2.b);
+  const mutableC = useMutable((root) => root.nest1.nest2.c);
   const batch = useBatch();
 
-  if (mutableNestedOrNull == null) {
+  if (mutableA == null || mutableB == null || mutableC == null) {
     return <div>Loading {renderCount}</div>;
   }
-
-  const mutableNested = mutableNestedOrNull;
 
   return (
     <div>
@@ -101,7 +101,6 @@ function Toolbar() {
         <button
           id="addA"
           onClick={() => {
-            const mutableA = mutableNested.get("a");
             mutableA.push(nanoid(7));
           }}
         >
@@ -111,7 +110,6 @@ function Toolbar() {
         <button
           id="addB"
           onClick={() => {
-            const mutableB = mutableNested.get("b");
             mutableB.insert(Math.floor(1_000_000 * Math.random()), 0);
           }}
         >
@@ -121,7 +119,6 @@ function Toolbar() {
         <button
           id="addC"
           onClick={() => {
-            const mutableC = mutableNested.get("c");
             const id = nanoid(7);
             mutableC.set(
               id,
@@ -139,10 +136,6 @@ function Toolbar() {
           id="addAll"
           onClick={() => {
             batch(() => {
-              const mutableA = mutableNested.get("a");
-              const mutableB = mutableNested.get("b");
-              const mutableC = mutableNested.get("c");
-
               const id = nanoid(7);
 
               mutableA.push(id);
@@ -167,7 +160,6 @@ function Toolbar() {
         <button
           id="deleteA"
           onClick={() => {
-            const mutableA = mutableNested.get("a");
             if (mutableA.length === 0) return;
 
             const index = randomNumber(mutableA.length);
@@ -180,7 +172,6 @@ function Toolbar() {
         <button
           id="deleteB"
           onClick={() => {
-            const mutableB = mutableNested.get("b");
             if (mutableB.length === 0) return;
 
             const index = randomNumber(mutableB.length);
@@ -193,7 +184,6 @@ function Toolbar() {
         <button
           id="deleteC"
           onClick={() => {
-            const mutableC = mutableNested.get("c");
             const keys = Array.from(mutableC.keys());
             if (keys.length === 0) return;
 
